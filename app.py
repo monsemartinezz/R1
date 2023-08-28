@@ -21,7 +21,7 @@ usuarios = [
 conexion = {
     'user': 'root',
     'password': '041022',
-    'host': '172.30.32.1',
+    'host': 'localhost',
     'database': 'Recuperacion_db'
 }
 
@@ -119,12 +119,14 @@ def update_usuario(user_id):
     if 'password' in datos:  # Verifica si la clave 'password' está en los datos
         password = datos['password']
 
-        # Realiza validaciones en la contraseña y la fecha de expiración (si existe)
+        # Verifica si la contraseña no es válida o no contiene un dígito
         if (not is_valid_password(password) or
             not re.search(r'\d', password)):
             return {'error': 'Formato de contraseña inválido'}, 400
         
+        # Obtiene la fecha de vencimiento de los datos
         expiration_date = datos.get('expiration_date')
+        # Verifica si la fecha de vencimiento existe y si no es válida
         if expiration_date and not is_valid_expiration_date(expiration_date):
             return {'error': 'Fecha de expiración inválida'}, 400
         
@@ -136,15 +138,21 @@ def update_usuario(user_id):
             # Verifica si el nombre de usuario y el correo electrónico ya existen (excepto el usuario actual)
             cursor.execute("SELECT * FROM usuarios WHERE username = %s AND id != %s", (datos['username'], user_id))
             existing_username = cursor.fetchone()
+            # Si se encuentra un registro con el mismo nombre de usuario, 
+                # devuelve un mensaje de error indicando que el nombre de usuario ya existe
             if existing_username:
                 return {'error': 'Nombre de usuario ya existe'}, 400
 
+            # Realiza una consulta a la base de datos para verificar si ya existe un usuario 
+            #    con el mismo correo electrónico, excluyendo al usuario actual
             cursor.execute("SELECT * FROM usuarios WHERE email = %s AND id != %s", (datos['email'], user_id))
             existing_email = cursor.fetchone()
+            # Si se encuentra un registro con el mismo correo electrónico, 
+            #   devuelve un mensaje de error indicando que el correo electrónico ya existe
             if existing_email:
                 return {'error': 'Correo electrónico ya existe'}, 400
 
-            # Realiza el hash de la contraseña y actualiza los datos con el hash
+            # Realiza el hash de la contraseña utilizando bcrypt y actualiza los datos con el hash resultante
             hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
             datos['password'] = hashed_password.decode('utf-8')
 
@@ -200,17 +208,21 @@ def login():
             conn = mysql.connector.connect(**conexion)  # Establece una nueva conexión a la base de datos
             cursor = conn.cursor(dictionary=True)  # Crea un cursor para consultas
 
-            # Verifica si 'email_or_username' es un correo electrónico o un nombre de usuario
+            # Verifica si el valor proporcionado (email o nombre de usuario) coincide con el patrón de dirección de correo electrónico
             if re.match(r"[^@]+@[^@]+\.[^@]+", email_or_username):
-                campo = f"SELECT * FROM usuarios WHERE email = '{email_or_username}'"
+                # Si el valor coincide con un patrón de correo electrónico, crea una consulta para buscar por correo electrónico
+                campo = f"SELECT * FROM usuarios WHERE email = '{email_or_username}'" 
             else:
+                # Si el valor no coincide con un patrón de correo electrónico, crea una consulta para buscar por nombre de usuario
                 campo = f"SELECT * FROM usuarios WHERE username = '{email_or_username}'"
 
             cursor.execute(campo)  # Ejecuta la consulta SQL para buscar al usuario
             user = cursor.fetchone()  # Obtiene la primera fila de resultados
-
+            # Verifica si se encontró un registro de usuario en la base de datos
             if user:
+                # Codifica la contraseña almacenada en el registro de usuario para poder compararla con la contraseña proporcionada
                 hashed_password = user['password'].encode('utf-8')
+                 # Verifica si la contraseña proporcionada coincide con la contraseña almacenada en el registro de usuario
                 if bcrypt.checkpw(password.encode('utf-8'), hashed_password):
                     return {'message': 'Inicio de sesión correcto'}, 200  # Retorna un mensaje exitoso si la contraseña coincide
                 else:
@@ -249,13 +261,15 @@ def add_producto():
         datos = request.get_json()  # Obtiene los datos JSON de la solicitud
         campo_obligatorio = ['nombre', 'precio_compra', 'precio_venta', 'descripcion', 'stock', 'valoracion', 'categoria']
 
-        # Realiza validaciones en los campos obligatorios
+        # Recorre cada campo en la lista de campos obligatorios
         for campo in campo_obligatorio:
+            # Verifica si el campo no está presente en los datos o está vacío
             if campo not in datos or not datos[campo]:
                 return {'error': f'Campo {campo} es requerido'}, 400
+            # Verifica si el campo es una cadena de texto y si su longitud excede el límite permitido (255 caracteres)
             if isinstance(datos[campo], str) and len(datos[campo]) > 255:
                 return {'error': f'Campo {campo} excede la longitud máxima permitida'}, 400
-
+        # Definición de la consulta SQL para agregar un producto en la base de datos
         add_producto = ("INSERT INTO productos "
                             "(nombre, precio_compra, precio_venta, descripcion, stock, valoracion, categoria) "
                             "VALUES (%s, %s, %s, %s, %s, %s, %s)")
